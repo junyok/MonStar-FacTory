@@ -1,0 +1,248 @@
+pragma solidity ^0.5.0;
+
+
+
+library SafeMath {
+    function add(uint256 a, uint256 b) internal pure returns (uint256) {
+        uint256 c = a + b;
+        require(c >= a, "SafeMath: addition overflow");
+        return c;
+    }
+    function sub(uint256 a, uint256 b) internal pure returns (uint256) {
+        require(b <= a, "SafeMath: subtraction overflow");
+        uint256 c = a - b;
+        return c;
+    }
+    
+}
+
+library OwnerArrays {
+    struct Set {
+        bytes32[] _values;
+        mapping (bytes32 => uint256) _indexes;
+    }
+    function _add(Set storage set, bytes32 value) private returns (bool) {
+        if (!_contains(set, value)) {
+            set._values.push(value);
+            set._indexes[value] = set._values.length;
+            return true;
+        } else {
+            return false;
+        }
+    }
+
+    function _remove(Set storage set, bytes32 value) private returns (bool) {
+        uint256 valueIndex = set._indexes[value];
+        if (valueIndex != 0) { // Equivalent to contains(set, value)
+            uint256 toDeleteIndex = valueIndex - 1;
+            uint256 lastIndex = set._values.length - 1;
+            bytes32 lastvalue = set._values[lastIndex];
+            set._values[toDeleteIndex] = lastvalue;
+            set._indexes[lastvalue] = toDeleteIndex + 1; // All indexes are 1-based
+            set._values.pop();
+            delete set._indexes[value];
+            return true;
+        } else {
+            return false;
+        }
+    }
+
+    function _contains(Set storage set, bytes32 value) private view returns (bool) {return set._indexes[value] != 0;}
+    function _length(Set storage set) private view returns (uint256) {return set._values.length;}
+    function _at(Set storage set, uint256 index) private view returns (bytes32) {
+        require(set._values.length > index, "EnumerableSet: index out of bounds");
+        return set._values[index];
+    }
+    struct AddressSet {Set _inner;}
+    function add(AddressSet storage set, address value) internal returns (bool) {return _add(set._inner, bytes32(uint256(value)));}
+    function remove(AddressSet storage set, address value) internal returns (bool) {return _remove(set._inner, bytes32(uint256(value)));}
+    function contains(AddressSet storage set, address value) internal view returns (bool) {return _contains(set._inner, bytes32(uint256(value)));}
+    function length(AddressSet storage set) internal view returns (uint256) {return _length(set._inner);}function at(AddressSet storage set, uint256 index) internal view returns (address) {return address(uint256(_at(set._inner, index)));}
+    struct UintSet {Set _inner;}
+    function add(UintSet storage set, uint256 value) internal returns (bool) {return _add(set._inner, bytes32(value));}
+    function remove(UintSet storage set, uint256 value) internal returns (bool) {return _remove(set._inner, bytes32(value));}
+    function contains(UintSet storage set, uint256 value) internal view returns (bool) {return _contains(set._inner, bytes32(value));}
+    function length(UintSet storage set) internal view returns (uint256) {return _length(set._inner);}
+    function at(UintSet storage set, uint256 index) internal view returns (uint256) {return uint256(_at(set._inner, index));}
+}
+
+interface IERC165 {
+    function supportsInterface(bytes4 interfaceId) external view returns (bool);
+}
+
+interface ERC721Metadata{
+  function name() external view returns (string memory _name);
+  function symbol() external view returns (string memory _symbol);
+}
+
+contract ERC165 is IERC165 {
+    bytes4 private constant _INTERFACE_ID_ERC165 = 0x01ffc9a7;
+    mapping(bytes4 => bool) private _supportedInterfaces;
+    constructor () internal {}
+    function supportsInterface(bytes4 interfaceId) external view returns (bool) {return _supportedInterfaces[interfaceId];}
+    function _registerInterface(bytes4 interfaceId) internal {
+        require(interfaceId != 0xffffffff, "ERC165: invalid interface id");
+        _supportedInterfaces[interfaceId] = true;
+    }
+}
+
+contract IERC721 is IERC165 {
+    event Transfer(address indexed from, address indexed to, uint256 indexed tokenId);
+    function balanceOf(address owner) public view returns (uint256 balance);
+} 
+
+contract IERC721Receiver {
+    function onERC721Received(address operator, address from, uint256 tokenId, bytes memory data) public returns (bytes4);
+}
+
+contract ERC721 is ERC165, IERC721 {
+    using SafeMath for uint256;
+    using OwnerArrays for OwnerArrays.UintSet;
+    bytes4 private constant _ERC721_RECEIVED = 0x150b7a02;
+    mapping (uint256 => address) public _tokenOwner;
+    bytes4 private constant _INTERFACE_ID_ERC721 = 0x80ac58cd;
+    address public owner;
+    address public manager_adrA;
+    address public manager_adrB;
+    constructor () public {_registerInterface(_INTERFACE_ID_ERC721);}
+    function ownerOf(uint256 tokenId) public view returns (address) {
+        address coinowner = _tokenOwner[tokenId];
+        require(coinowner != address(0), "ERC721: owner query for nonexistent token");
+        return coinowner;
+    }
+    function uint2str(uint _i) internal pure returns (string memory _uintAsString) {
+        if (_i == 0) {return "0";}
+        uint j = _i; uint len;
+        while (j != 0) {len++;j /= 10;}
+        bytes memory bstr = new bytes(len);
+        uint k = len - 1;
+        while (_i != 0) {bstr[k--] = byte(uint8(48 + _i % 10));_i /= 10;}
+        return string(bstr);
+    }
+    function concatStrng(string memory _a, string memory _b) internal pure returns (string memory){
+        bytes memory bytes_a = bytes(_a);
+        bytes memory bytes_b = bytes(_b);
+        string memory length_ab = new string(bytes_a.length + bytes_b.length);
+        bytes memory bytes_c = bytes(length_ab);
+        uint k = 0;
+        for (uint256 i = 0; i < bytes_a.length; i++) bytes_c[k++] = bytes_a[i];
+        for (uint256 i = 0; i < bytes_b.length; i++) bytes_c[k++] = bytes_b[i];
+        return string(bytes_c);
+    }
+}
+
+
+contract MonDefiContract is ERC721{
+    int8 isInit ;
+    string public _name;
+    string public _symbol;
+    uint8 public _decimals;
+    uint256 public _totalSupply;
+    uint256 public prefix;
+   
+    string private baseImageUrl;
+    string private baseMeta;
+    struct EaDefi_Card {
+        address User_Address;           // wallet address of who staking
+        uint256 KMON_ID;                // Token id of NFT of KMON
+        uint256 StakingIN_Amount;       // Amouot of coin will stking with NFT coin.
+        uint256 MONAmount;              // Amount of coin will be given to the address
+        uint256 cont_date;              // timestamp of staking time
+        string has_refund;              // if this yes, this is not going to give back the coin.
+    }
+    
+    mapping(address => mapping(bytes32 => string)) user_dataList;
+    mapping(uint256 => EaDefi_Card) private EaDefi_Card_list;
+    mapping (address => OwnerArrays.UintSet) private _holderTokens;
+    
+    constructor() public {
+        _name ="MON DEFI";
+        _symbol ="MDFY";
+        _decimals =0;
+        _totalSupply = 0;
+        prefix = 1000;
+        owner = msg.sender; 
+    }
+    
+    function _mintContract(address to, uint256 tokenId) internal {
+        require(to != address(0), "ERC721: mint to the zero address");
+        require(!_exists(tokenId), "ERC721: token already minted");
+        _tokenOwner[tokenId] = to;
+        _holderTokens[to].add(tokenId);
+        emit Transfer(address(0), to, tokenId);
+    }
+    
+    function mintContract(address account,  uint256 KMON_ID , uint256 StakingIN_Amount,uint256 MONAmount) public {
+        require(owner == msg.sender || manager_adrA == msg.sender || manager_adrB == msg.sender);
+        uint256 ContID = prefix + _totalSupply; // Unique card ID
+        EaDefi_Card_list[ContID] =EaDefi_Card(account, KMON_ID, StakingIN_Amount,MONAmount, block.timestamp,"NO" );
+        _mintContract(account, ContID );
+        _totalSupply++;
+    }
+    
+    function tokenOfOwnerByIndex(address holder, uint256 index) public view returns (uint256) {
+        return _holderTokens[holder].at(index);
+    }
+    
+    function balanceOf(address coinowner) public view returns (uint256) {
+        require(coinowner != address(0), "ERC721: balance query for the zero address");
+        return _holderTokens[coinowner].length();
+    }
+    
+    function getContractInfo( uint256 tokenId) public view returns (
+        address User_Address, uint256 KMON_ID , uint256 LMCHAmount,uint256 MONAmount,uint256 cont_date,string memory has_refund){
+        EaDefi_Card memory ea = EaDefi_Card_list[tokenId];
+        return (ea.User_Address, ea.KMON_ID, ea.StakingIN_Amount, ea.MONAmount, ea.cont_date, ea.has_refund);
+    }
+    
+    
+    function getOwner() public view returns (address) {return (owner);}
+    function getManager() public view returns (address,address) {return (manager_adrA,manager_adrB);}
+    function totalSupply() public view returns (uint256) {return _totalSupply;}
+    function name() public view returns (string memory) {return _name;}
+    function symbol() public view returns (string memory) {return _symbol;}
+    
+    
+    
+    function _removeContract(uint256 tokenId, address coinowner) internal {
+        _tokenOwner[tokenId] = address(0);
+        _holderTokens[coinowner].remove(tokenId);
+        emit Transfer(coinowner, address(0), tokenId);
+    }
+    
+    function removeContract(uint256 tokenId, address account) public {
+        require(owner == msg.sender || manager_adrA == msg.sender || manager_adrB == msg.sender);
+        require(_tokenOwner[tokenId] == account ,"The owner of this contract is not the address");
+        _removeContract(tokenId,account);
+    }
+    
+    function balanceByAddressAll(address holder) public view returns (string memory) {
+        require(holder != address(0), "ERC721: balance query for the zero address");
+        uint256 ns = _holderTokens[holder].length();
+        string memory _a1 = '[';
+        for(uint8 i = 0; i < ns; i++ ){
+            uint256 ea = _holderTokens[holder].at(i);
+            string memory No = uint2str(ea);
+            if( i > 0 ) _a1 = concatStrng(_a1, ',');
+            _a1 = concatStrng(_a1, No);
+            
+        }
+        _a1 = concatStrng(_a1, ']');
+        return _a1;
+    }
+    
+    function _set_manager(address account ,uint8 whichone)internal{
+        if( whichone==1) manager_adrA = account;
+        if( whichone==2) manager_adrB = account;
+    }
+    function set_manager(address account,uint8 whichone ) public{
+        require(owner == msg.sender);
+        require(account != address(0), "ERC721: Cannot set manager to the zero address");
+        _set_manager(account, whichone);
+    }
+    
+    function _exists(uint256 tokenId) internal view returns (bool) {
+        address Coinowner = _tokenOwner[tokenId];
+        return Coinowner != address(0);
+    }
+}

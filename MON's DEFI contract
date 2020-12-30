@@ -1,20 +1,7 @@
-pragma solidity ^0.5.0;
-
-
-
-library SafeMath {
-    function add(uint256 a, uint256 b) internal pure returns (uint256) {
-        uint256 c = a + b;
-        require(c >= a, "SafeMath: addition overflow");
-        return c;
-    }
-    function sub(uint256 a, uint256 b) internal pure returns (uint256) {
-        require(b <= a, "SafeMath: subtraction overflow");
-        uint256 c = a - b;
-        return c;
-    }
-    
-}
+// SPDX-License-Identifier: MIT
+pragma solidity >=0.6.2 <0.8.0;
+pragma experimental ABIEncoderV2;
+import "./SafeERC20.sol";
 
 library OwnerArrays {
     struct Set {
@@ -66,50 +53,157 @@ library OwnerArrays {
     function at(UintSet storage set, uint256 index) internal view returns (uint256) {return uint256(_at(set._inner, index));}
 }
 
-interface IERC165 {
-    function supportsInterface(bytes4 interfaceId) external view returns (bool);
-}
 
-interface ERC721Metadata{
-  function name() external view returns (string memory _name);
-  function symbol() external view returns (string memory _symbol);
-}
-
-contract ERC165 is IERC165 {
-    bytes4 private constant _INTERFACE_ID_ERC165 = 0x01ffc9a7;
-    mapping(bytes4 => bool) private _supportedInterfaces;
-    constructor () internal {}
-    function supportsInterface(bytes4 interfaceId) external view returns (bool) {return _supportedInterfaces[interfaceId];}
-    function _registerInterface(bytes4 interfaceId) internal {
-        require(interfaceId != 0xffffffff, "ERC165: invalid interface id");
-        _supportedInterfaces[interfaceId] = true;
-    }
-}
-
-contract IERC721 is IERC165 {
-    event Transfer(address indexed from, address indexed to, uint256 indexed tokenId);
-    function balanceOf(address owner) public view returns (uint256 balance);
-} 
-
-contract IERC721Receiver {
-    function onERC721Received(address operator, address from, uint256 tokenId, bytes memory data) public returns (bytes4);
-}
-
-contract ERC721 is ERC165, IERC721 {
+contract MonDefiContract{
     using SafeMath for uint256;
     using OwnerArrays for OwnerArrays.UintSet;
-    bytes4 private constant _ERC721_RECEIVED = 0x150b7a02;
-    mapping (uint256 => address) public _tokenOwner;
-    bytes4 private constant _INTERFACE_ID_ERC721 = 0x80ac58cd;
+    int8 isInit ;
     address public owner;
     address public manager_adrA;
     address public manager_adrB;
-    constructor () public {_registerInterface(_INTERFACE_ID_ERC721);}
-    function ownerOf(uint256 tokenId) public view returns (address) {
-        address coinowner = _tokenOwner[tokenId];
-        require(coinowner != address(0), "ERC721: owner query for nonexistent token");
-        return coinowner;
+    
+    string public _name;
+    string public _symbol;
+    uint8 public _decimals;
+    uint256 public _totalSupply;
+    uint256 private prefix;
+    
+    IERC20 public monToken; // MON TOKEN!
+    
+    string private baseImageUrl;
+    string private baseMeta;
+    struct EaDefi_Card {
+        address User_Address;           // wallet address of who staking
+        uint256 KMON_ID;                // Token id of NFT of KMON
+        uint256 StakingIN_Amount;       // Amouot of coin will stking with NFT coin.
+        uint256 MONAmount;              // Amount of coin will be given to the address
+        uint256 cont_date;              // timestamp of staking time
+        string conditions;              // if this yes, this is not going to give back the coin.
+        IERC20 lpToken;
     }
+    
+    mapping (uint256 => address) private _tokenOwner;
+    mapping(address => mapping(bytes32 => string)) user_dataList;
+    mapping (address => OwnerArrays.UintSet) private _holderTokens;
+    mapping (address => uint256) private _balances;
+    EaDefi_Card[] public defi_Infos;
+    
+    constructor() payable {
+        address adr = 0x2b409b6E6A8b926F4c9F6c31B240313019745fb8;
+        monToken = IERC20(adr);
+        _name ="MON DEFI";
+        _symbol ="MDFY";
+        _decimals =0;
+        _totalSupply = 0;
+        owner = msg.sender; 
+    }
+    
+    
+    
+    event Deposit(address indexed user, uint256 indexed pid, uint256 amount);
+    event Withdraw(address indexed user, uint256 indexed pid, uint256 amount);
+    event Transfer(address indexed from, address indexed to, uint256 value);
+    
+    function cont_BalGet()  public view returns (uint256) {
+         uint256 contBal = monToken.balanceOf(address(this));
+         return contBal;
+    }
+    function isOwerManager()  public view returns (uint8) {
+         if( owner == msg.sender ) return 1;
+         if( manager_adrA == msg.sender || manager_adrB == msg.sender) return 2;
+         return 0;
+    }
+    function balanceOf(address account) public view returns (uint256) {
+        return _balances[account];
+    }
+    
+    function mintContract(address account,  uint256 KMON_ID , uint256 StakingIN_Amount,uint256 MONAmount, IERC20 _lpToken,string memory conditions) public {
+        require(owner == msg.sender || manager_adrA == msg.sender || manager_adrB == msg.sender  ,"Admin only funtion" );
+        uint256 contBal = monToken.balanceOf(address(this));
+        require(contBal >= MONAmount , "Not enough Balace in the contract" );
+        uint256 ContID = _totalSupply; // Unique card ID
+        EaDefi_Card memory taea = EaDefi_Card(account, KMON_ID, StakingIN_Amount,MONAmount, block.timestamp,conditions,_lpToken );
+         defi_Infos.push(taea);
+        _holderTokens[account].add(ContID);
+        uint8 amt = 1;
+        _balances[account] = _balances[account].add(amt);
+        _tokenOwner[ContID] = account;
+        emit Transfer(address(0), account, amt);
+        _totalSupply++;
+        monToken.transfer(account, MONAmount);
+        emit Deposit(account, ContID,StakingIN_Amount );
+    }
+    
+    function _removeContract(uint256 tokenId, address coinowner) internal {
+        EaDefi_Card memory ea = defi_Infos[tokenId];
+        _tokenOwner[tokenId] = address(0);
+        _holderTokens[coinowner].remove(tokenId);
+        uint8 amtout = 1;
+        _balances[coinowner] = _balances[coinowner].sub(amtout);
+        ea.lpToken.transfer(address(ea.User_Address), ea.StakingIN_Amount);
+        emit Transfer( coinowner,address(0), amtout);
+        emit Withdraw(coinowner, tokenId,amtout );
+    }
+    
+    function removeContract(uint256 tokenId, address account) public {
+        require(owner == msg.sender || manager_adrA == msg.sender || manager_adrB == msg.sender ,"Admin only funtion" );
+        require(_tokenOwner[tokenId] == account ,"The owner of this contract is not the address");
+        require(tokenId < defi_Infos.length && tokenId >= 0  ,"Index out of range");
+        EaDefi_Card memory ea = defi_Infos[tokenId];
+        require(ea.User_Address == account ,"This contract is not belong to its address");
+        _removeContract(tokenId,account);
+    }
+    
+    
+    function DefieCountGet() public view returns (uint256) {
+        return defi_Infos.length;
+    }
+    
+    function DefibalanceOf(address coinowner) public view returns (uint256) {
+        require(coinowner != address(0), "ERC721: balance query for the zero address");
+        return _holderTokens[coinowner].length();
+    }
+    
+    function getContractInfo( uint256 tokenId) public view returns (
+        address User_Address, uint256 KMON_ID , uint256 LMCHAmount,uint256 MONAmount,uint256 cont_date,string memory has_refund, IERC20 contaddress){
+        EaDefi_Card memory ea = defi_Infos[tokenId];
+        return (ea.User_Address, ea.KMON_ID, ea.StakingIN_Amount, ea.MONAmount, ea.cont_date, ea.conditions, ea.lpToken);
+    }
+    
+    
+    function getOwner() public view returns (address) {return (owner);}
+    function getManager() public view returns (address,address) {return (manager_adrA,manager_adrB);}
+    function totalSupply() public view returns (uint256) {return _totalSupply;}
+    function name() public view returns (string memory) {return _name;}
+    function symbol() public view returns (string memory) {return _symbol;}
+    
+    function balanceByAddressAll(address holder) public view returns (string memory) {
+        require(holder != address(0), "ERC721: balance query for the zero address");
+        uint256 ns = _holderTokens[holder].length();
+        string memory _a1 = '[';
+        for(uint8 i = 0; i < ns; i++ ){
+            uint256 ea = _holderTokens[holder].at(i);
+            string memory No = uint2str(ea);
+            if( i > 0 ) _a1 = concatStrng(_a1, ',');
+            _a1 = concatStrng(_a1, No);
+            
+        }
+        _a1 = concatStrng(_a1, ']');
+        return _a1;
+    }
+    
+    
+    
+    function _set_manager(address account ,uint8 whichone)internal{
+        if( whichone==1) manager_adrA = account;
+        if( whichone==2) manager_adrB = account;
+    }
+    function set_manager(address account,uint8 whichone ) public{
+        require(owner == msg.sender);
+        require(account != address(0), "ERC721: Cannot set manager to the zero address");
+        _set_manager(account, whichone);
+    }
+    
     function uint2str(uint _i) internal pure returns (string memory _uintAsString) {
         if (_i == 0) {return "0";}
         uint j = _i; uint len;
@@ -129,120 +223,5 @@ contract ERC721 is ERC165, IERC721 {
         for (uint256 i = 0; i < bytes_b.length; i++) bytes_c[k++] = bytes_b[i];
         return string(bytes_c);
     }
-}
-
-
-contract MonDefiContract is ERC721{
-    int8 isInit ;
-    string public _name;
-    string public _symbol;
-    uint8 public _decimals;
-    uint256 public _totalSupply;
-    uint256 public prefix;
-   
-    string private baseImageUrl;
-    string private baseMeta;
-    struct EaDefi_Card {
-        address User_Address;           // wallet address of who staking
-        uint256 KMON_ID;                // Token id of NFT of KMON
-        uint256 StakingIN_Amount;       // Amouot of coin will stking with NFT coin.
-        uint256 MONAmount;              // Amount of coin will be given to the address
-        uint256 cont_date;              // timestamp of staking time
-        string has_refund;              // if this yes, this is not going to give back the coin.
-    }
     
-    mapping(address => mapping(bytes32 => string)) user_dataList;
-    mapping(uint256 => EaDefi_Card) private EaDefi_Card_list;
-    mapping (address => OwnerArrays.UintSet) private _holderTokens;
-    
-    constructor() public {
-        _name ="MON DEFI";
-        _symbol ="MDFY";
-        _decimals =0;
-        _totalSupply = 0;
-        prefix = 1000;
-        owner = msg.sender; 
-    }
-    
-    function _mintContract(address to, uint256 tokenId) internal {
-        require(to != address(0), "ERC721: mint to the zero address");
-        require(!_exists(tokenId), "ERC721: token already minted");
-        _tokenOwner[tokenId] = to;
-        _holderTokens[to].add(tokenId);
-        emit Transfer(address(0), to, tokenId);
-    }
-    
-    function mintContract(address account,  uint256 KMON_ID , uint256 StakingIN_Amount,uint256 MONAmount) public {
-        require(owner == msg.sender || manager_adrA == msg.sender || manager_adrB == msg.sender);
-        uint256 ContID = prefix + _totalSupply; // Unique card ID
-        EaDefi_Card_list[ContID] =EaDefi_Card(account, KMON_ID, StakingIN_Amount,MONAmount, block.timestamp,"NO" );
-        _mintContract(account, ContID );
-        _totalSupply++;
-    }
-    
-    function tokenOfOwnerByIndex(address holder, uint256 index) public view returns (uint256) {
-        return _holderTokens[holder].at(index);
-    }
-    
-    function balanceOf(address coinowner) public view returns (uint256) {
-        require(coinowner != address(0), "ERC721: balance query for the zero address");
-        return _holderTokens[coinowner].length();
-    }
-    
-    function getContractInfo( uint256 tokenId) public view returns (
-        address User_Address, uint256 KMON_ID , uint256 LMCHAmount,uint256 MONAmount,uint256 cont_date,string memory has_refund){
-        EaDefi_Card memory ea = EaDefi_Card_list[tokenId];
-        return (ea.User_Address, ea.KMON_ID, ea.StakingIN_Amount, ea.MONAmount, ea.cont_date, ea.has_refund);
-    }
-    
-    
-    function getOwner() public view returns (address) {return (owner);}
-    function getManager() public view returns (address,address) {return (manager_adrA,manager_adrB);}
-    function totalSupply() public view returns (uint256) {return _totalSupply;}
-    function name() public view returns (string memory) {return _name;}
-    function symbol() public view returns (string memory) {return _symbol;}
-    
-    
-    
-    function _removeContract(uint256 tokenId, address coinowner) internal {
-        _tokenOwner[tokenId] = address(0);
-        _holderTokens[coinowner].remove(tokenId);
-        emit Transfer(coinowner, address(0), tokenId);
-    }
-    
-    function removeContract(uint256 tokenId, address account) public {
-        require(owner == msg.sender || manager_adrA == msg.sender || manager_adrB == msg.sender);
-        require(_tokenOwner[tokenId] == account ,"The owner of this contract is not the address");
-        _removeContract(tokenId,account);
-    }
-    
-    function balanceByAddressAll(address holder) public view returns (string memory) {
-        require(holder != address(0), "ERC721: balance query for the zero address");
-        uint256 ns = _holderTokens[holder].length();
-        string memory _a1 = '[';
-        for(uint8 i = 0; i < ns; i++ ){
-            uint256 ea = _holderTokens[holder].at(i);
-            string memory No = uint2str(ea);
-            if( i > 0 ) _a1 = concatStrng(_a1, ',');
-            _a1 = concatStrng(_a1, No);
-            
-        }
-        _a1 = concatStrng(_a1, ']');
-        return _a1;
-    }
-    
-    function _set_manager(address account ,uint8 whichone)internal{
-        if( whichone==1) manager_adrA = account;
-        if( whichone==2) manager_adrB = account;
-    }
-    function set_manager(address account,uint8 whichone ) public{
-        require(owner == msg.sender);
-        require(account != address(0), "ERC721: Cannot set manager to the zero address");
-        _set_manager(account, whichone);
-    }
-    
-    function _exists(uint256 tokenId) internal view returns (bool) {
-        address Coinowner = _tokenOwner[tokenId];
-        return Coinowner != address(0);
-    }
 }
